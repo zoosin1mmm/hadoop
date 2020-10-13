@@ -52,7 +52,7 @@ public class WordCount {
         
     FileInputFormat.addInputPath(job, new Path(args[0]));
     FileOutputFormat.setOutputPath(job, new Path(args[1]));
-        
+    //It have a job after this job is finish        
     job.waitForCompletion(true);
  }
         
