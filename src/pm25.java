@@ -28,6 +28,7 @@ public class pm25 {
                 {
                     point[index] = new int[tokens.length];
                     for (int i=date_index+1;i<tokens.length;i++){
+                        if(tokens[i].length==0) continue;
                         point[index][i-date_index-1] = Integer.parseInt(tokens[i].trim());
                     }
                     break;
@@ -41,6 +42,7 @@ public class pm25 {
             long[] distance = {0,0,0,0};//距離
             int tmp = 0;
             for (int i=date_index+1;i<tokens.length;i++){
+                if(tokens[i].length==0) continue;
                 tmp = Integer.parseInt(tokens[i].trim());
                 for (int j =0 ; j<4 ;j++ ) {
                     distance[j]+= (tmp - point[j][i-date_index-1])*(tmp - point[j][i-date_index-1]);
