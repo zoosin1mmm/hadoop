@@ -12,14 +12,14 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
         
 public class filter {
-        
+         
  public static class Map extends Mapper<LongWritable, Text, Text, Text> {
     public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
 	String[] tokens = value.toString().split(",");
         String result = "";
         Pattern pattern = Pattern.compile("\\d+");
         Matcher matcher;
-        if(tokens[2].trim().equals("PM2.5"))
+        if(tokens[1].trim().equals("§å¤å¤")&&tokens[2].trim().equals("PM2.5"))
         {
             result = tokens[0]+","+tokens[1]+",";
             for (int i =0;i<tokens.length ;i++ ) {
@@ -50,7 +50,6 @@ public class filter {
         
  public static void main(String[] args) throws Exception {
     Configuration conf = new Configuration();
-        
     Job job = new Job(conf, "filter");
     
     job.setOutputKeyClass(Text.class);
