@@ -11,13 +11,12 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
         
 public class pm25 {
- static int[][] point={{},{},{},{}};
+ static float[][] point={{},{},{},{}};
  static boolean full = false;
  //第一次 日期在第一位 第二次後 日期在第二位
- static int date_index=0;
  public static class Map extends Mapper<LongWritable, Text, IntWritable, Text> {
     public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
-        String[] tokens = value.toString().split(",");
+        String[] tokens = value.toString().trim().split(",");
         int index=0;
         // 先取四點 當中心點
         if(!full)
@@ -26,10 +25,10 @@ public class pm25 {
             {
                 if(point[index].length==0)
                 {
-                    point[index] = new int[tokens.length];
-                    for (int i=date_index+1;i<tokens.length;i++){
-                        if(tokens[i].length==0) continue;
-                        point[index][i-date_index-1] = Integer.parseInt(tokens[i].trim());
+                    point[index] = new float[tokens.length];
+                    for (int i=1;i<tokens.length;i++){
+                        if(tokens[i].length()==0) continue;
+                        point[index][i-1] = (float)Integer.parseInt(tokens[i]);
                     }
                     break;
                 }
@@ -41,16 +40,16 @@ public class pm25 {
             // 計算距離
             long[] distance = {0,0,0,0};//距離
             int tmp = 0;
-            for (int i=date_index+1;i<tokens.length;i++){
-                if(tokens[i].length==0) continue;
-                tmp = Integer.parseInt(tokens[i].trim());
+            for (int i=1;i<tokens.length;i++){
+                if(tokens[i].length()==0) continue;
+                tmp = Integer.parseInt(tokens[i]);
                 for (int j =0 ; j<4 ;j++ ) {
-                    distance[j]+= (tmp - point[j][i-date_index-1])*(tmp - point[j][i-date_index-1]);
+                    distance[j]+= (tmp - point[j][i-1])*(tmp - point[j][i-1]);
                  }
             }
             // 最小
             long min =0;
-            for (int i =1 ; i<4 ;i++ ) {
+            for (int i =0 ; i<4 ;i++ ) {
                 // 比較小或第一回 且不是同一個日期 更新min
                 if((distance[i]<min||min==0)&&distance[i]!=0)
                 {
@@ -69,59 +68,62 @@ public class pm25 {
     public void reduce(IntWritable key, Iterable<Text> values, Context context) 
       throws IOException, InterruptedException {
         String[] token={};
-        long[] rain={};
+        float[] rain={};
+        boolean repeat=false;
         int count = 0;
+        int point_k = key.get();
         // 字串切割
         for (Text val : values) {
-            token = val.toString().split(",");
+            token = val.toString().trim().split(",");
             if(rain.length==0)
-                rain = new long[token.length];
+                rain = new float[token.length-1];
             // 雨量平均
-            for (int i=date_index+1; i<token.length; i++) {
-                rain[i]+=Integer.parseInt(token[i].trim());
+            boolean tmp_repeat=true;
+            for (int i=1; i<token.length; i++) {
+                if(token[i].length()==0) continue;
+                rain[i-1]+=(float)Integer.parseInt(token[i]);
+                // 群中心是否有重複
+                if(point[point_k][i-1]!=(float)Integer.parseInt(token[i])) tmp_repeat = false;
             }
+            if(tmp_repeat) repeat=true;
             context.write(key, val);
             count++;
         }
-        for (int i=date_index+1; i<token.length; i++) {
-            point[key.get()][i-date_index-1]=(int)(rain[i]/count);
+        // 無重複要加入計算平均
+        if(!repeat)
+        {
+            for (int i=0; i<rain.length; i++) {
+                rain[i]+=point[point_k][i];
+            }
+            context.write(new IntWritable(10), new Text("add"));
+            count++;
         }
+        // // 更新群中心
+        String output = "";
+        String output2 = "";
+        String output3 = "";
+        for (int i=0; i<rain.length; i++) {
+            output3+=String.valueOf(point[point_k][i])+",";
+            point[point_k][i]=rain[i]/count;
+            output2+=String.valueOf(rain[i])+",";
+            output+=String.valueOf(point[point_k][i])+",";
+        }
+        context.write(new IntWritable(10), new Text(output));
+        context.write(new IntWritable(count), new Text(output2));
+        context.write(new IntWritable(10), new Text(output3));
     }
-    public void cleanup(Context context) throws IOException, InterruptedException {
-       date_index=1;
-   }
+
  }
 
- public static class SortMap extends Mapper<LongWritable, Text, Text, Text> {
-    public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
-        String line = value.toString();
-        StringTokenizer tokenizer = new StringTokenizer(line);
-        while (tokenizer.hasMoreTokens()) {
-            String token = tokenizer.nextToken();
-            context.write(new Text(token),new Text(""));
-        }
-    }
- } 
-        
- public static class SortReduce extends Reducer<Text, Text, Text, Text> {
-
-    public void reduce(Text key, Iterable<Text> values, Context context) 
-      throws IOException, InterruptedException {
-        for (Text val : values) {
-           context.write(key,new Text(""));
-        }
-    }
-}
-        
  public static void main(String[] args) throws Exception {
 
     Configuration conf = new Configuration();
     String intput_path=args[0];
-    String output_path = "";
+    String output_path = args[1];
+    String orign_path= args[1];
     // KMEAN
    int i=0;
-   for (i=0;i<30 ;i++ ) {
-        output_path = intput_path+String.valueOf(i);
+   for (i=0;i<2;i++ ) {
         Job job = new Job(conf, "pm25");
         
         job.setOutputKeyClass(IntWritable.class);
@@ -136,25 +138,7 @@ public class pm25 {
         FileInputFormat.addInputPath(job, new Path(intput_path));
         FileOutputFormat.setOutputPath(job, new Path(output_path));
         job.waitForCompletion(true);
-        intput_path = output_path;
+        output_path = orign_path+"_"+String.valueOf(i);
     }
-    // 排序
-    output_path = intput_path+String.valueOf(i);
-    Job job2 = new Job(conf, "avg");
-    job2.setOutputKeyClass(Text.class);
-    job2.setOutputValueClass(Text.class);
-        
-    job2.setMapperClass(SortMap.class);
-    job2.setReducerClass(SortReduce.class);
-    job2.setJarByClass(pm25.class);
-        
-    job2.setInputFormatClass(TextInputFormat.class);
-    job2.setOutputFormatClass(TextOutputFormat.class);
-        
-    FileInputFormat.addInputPath(job2, new Path(intput_path));
-    FileOutputFormat.setOutputPath(job2, new Path(output_path));
-        
-    job2.waitForCompletion(true);
- }
- }
-
+  }
+}
