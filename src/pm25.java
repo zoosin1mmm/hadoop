@@ -11,28 +11,53 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
         
 public class pm25 {
- static float[][] point={{},{},{},{}};
+ static int[][] point={{},{},{},{}};
  static boolean full = false;
- //第一次 日期在第一位 第二次後 日期在第二位
  public static class Map extends Mapper<LongWritable, Text, IntWritable, Text> {
     public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
-        String[] tokens = value.toString().trim().split(",");
+        StringTokenizer tokenizer = new StringTokenizer(value.toString());
+        String point_str ="";
+        String rain_str ="";
+        while (tokenizer.hasMoreTokens()) {
+            String token = tokenizer.nextToken();
+            if(point_str=="") point_str=token.trim();
+            else rain_str = token.trim();
+        }
+        // 表示為第一次讀檔案
+        if(rain_str==""){
+            rain_str=point_str;
+            point_str = "";
+        }
+
+        String[] tokens = rain_str.split(",");
         int index=0;
         // 先取四點 當中心點
         if(!full)
         {
+            // 表示為第一次讀檔案
+            String[][] point_tokens = {{},{},{},{}};
+            if(point_str!="") 
+            {
+                String[] point_tmp = {};
+                point_tmp=point_str.split(";");
+                for (int i=0;i<point_tmp.length-1 ;i++ ) {
+                    point_tokens[i]= point_tmp[i].split(",");
+                }
+            }
             for (index=0; index<4;index++ ) 
             {
                 if(point[index].length==0)
                 {
-                    point[index] = new float[tokens.length];
+                    if(point_str!="") tokens = point_tokens[index];
+                    point[index] = new int[tokens.length];
                     for (int i=1;i<tokens.length;i++){
                         if(tokens[i].length()==0) continue;
-                        point[index][i-1] = (float)Integer.parseInt(tokens[i]);
+                        point[index][i-1] = Integer.parseInt(tokens[i]);
                     }
-                    break;
+                    if(point_str=="") break;
                 }
             }
+            
             if(index==3) full=true;
         }
         else
@@ -60,15 +85,17 @@ public class pm25 {
             index = tmp;
         }
         // 分群以數字0-3
-        context.write(new IntWritable(index), value);
+        context.write(new IntWritable(index), new Text(rain_str));
     } 
 }  
+
+
  public static class Reduce extends Reducer<IntWritable,Text , IntWritable, Text> {
 
     public void reduce(IntWritable key, Iterable<Text> values, Context context) 
       throws IOException, InterruptedException {
         String[] token={};
-        float[] rain={};
+        int[] rain={};
         boolean repeat=false;
         int count = 0;
         int point_k = key.get();
@@ -76,18 +103,18 @@ public class pm25 {
         for (Text val : values) {
             token = val.toString().trim().split(",");
             if(rain.length==0)
-                rain = new float[token.length-1];
+                rain = new int[token.length-1];
             // 雨量平均
             boolean tmp_repeat=true;
             for (int i=1; i<token.length; i++) {
                 if(token[i].length()==0) continue;
-                rain[i-1]+=(float)Integer.parseInt(token[i]);
+                rain[i-1]+=Integer.parseInt(token[i]);
                 // 群中心是否有重複
-                if(point[point_k][i-1]!=(float)Integer.parseInt(token[i])) tmp_repeat = false;
+                if(point[point_k][i-1]!=Integer.parseInt(token[i])) tmp_repeat = false;
             }
             if(tmp_repeat) repeat=true;
-            context.write(key, val);
             count++;
+            context.write(key, val);
         }
         // 無重複要加入計算平均
         if(!repeat)
@@ -95,25 +122,52 @@ public class pm25 {
             for (int i=0; i<rain.length; i++) {
                 rain[i]+=point[point_k][i];
             }
-            context.write(new IntWritable(10), new Text("add"));
             count++;
         }
         // // 更新群中心
         String output = "";
-        String output2 = "";
-        String output3 = "";
         for (int i=0; i<rain.length; i++) {
-            output3+=String.valueOf(point[point_k][i])+",";
             point[point_k][i]=rain[i]/count;
-            output2+=String.valueOf(rain[i])+",";
             output+=String.valueOf(point[point_k][i])+",";
         }
-        context.write(new IntWritable(10), new Text(output));
-        context.write(new IntWritable(count), new Text(output2));
-        context.write(new IntWritable(10), new Text(output3));
+        context.write(new IntWritable(10+point_k), new Text(output));
     }
 
  }
+
+ public static class SortMap2 extends Mapper<LongWritable, Text, Text, Text> {
+    public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+        StringTokenizer tokenizer = new StringTokenizer(value.toString());
+        String tag ="";
+        while (tokenizer.hasMoreTokens()) {
+            String token = tokenizer.nextToken();
+            tag=token+";";
+            token = tokenizer.nextToken();
+            context.write(new Text("1"), new Text(tag+token));
+        }
+    }
+}
+ public static class SortReduce2 extends Reducer<Text,Text,Text,Text> {
+
+    public void reduce(Text key, Iterable<Text> values, Context context) 
+      throws IOException, InterruptedException {
+ 	String[] token={};
+        String[][] tokens={};
+        String result_k = "";
+        int count=0;
+
+        for (Text val : values) {
+            token = val.toString().trim().split(";");
+            if(Integer.parseInt(token[0].trim())>=10)
+                result_k+="t,"+token[1]+";";
+        }
+	for (Text val : values) {
+            token = val.toString().trim().split(";");
+            if(Integer.parseInt(token[0].trim())<10)
+		context.write(new Text(result_k+token[0]), new Text(token[1]));
+        }
+}
+}
 
  public static void main(String[] args) throws Exception {
 
@@ -123,8 +177,9 @@ public class pm25 {
     String orign_path= args[1];
     // KMEAN
    int i=0;
-   for (i=0;i<2;i++ ) {
-        Job job = new Job(conf, "pm25");
+   for (i=0;i<1;i++ ) {
+    // 計算
+        Job job = new Job(conf, "pm25_calcu_"+i);
         
         job.setOutputKeyClass(IntWritable.class);
         job.setOutputValueClass(Text.class);
@@ -138,7 +193,26 @@ public class pm25 {
         FileInputFormat.addInputPath(job, new Path(intput_path));
         FileOutputFormat.setOutputPath(job, new Path(output_path));
         job.waitForCompletion(true);
-        output_path = orign_path+"_"+String.valueOf(i);
+        intput_path = output_path;
+        output_path = orign_path+"c_"+String.valueOf(i);
+    // 排序
+        Job job2 = new Job(conf, "pm25_sort_"+i);
+        
+        job2.setOutputKeyClass(Text.class);
+        job2.setOutputValueClass(Text.class);
+            
+        job2.setMapperClass(SortMap2.class);
+        job2.setReducerClass(SortReduce2.class);
+        job2.setJarByClass(pm25.class);
+            
+        job2.setInputFormatClass(TextInputFormat.class);
+        job2.setOutputFormatClass(TextOutputFormat.class);
+        FileInputFormat.addInputPath(job2, new Path(intput_path));
+        FileOutputFormat.setOutputPath(job2, new Path(output_path));
+        job2.waitForCompletion(true);
+        intput_path = output_path;
+        output_path = orign_path+"s_"+String.valueOf(i);
     }
   }
 }
+
