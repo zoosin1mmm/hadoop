@@ -180,7 +180,7 @@ public class pm25 {
     String orign_path= args[1];
     // KMEAN
    int i=0;
-   for (i=0;i<10;i++ ) {
+   for (i=0;i<30;i++ ) {
     // 計算
         Job job = new Job(conf, "pm25_calcu_"+i);
         
