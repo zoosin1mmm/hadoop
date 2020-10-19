@@ -19,7 +19,7 @@ public class filter {
         String result = "";
         Pattern pattern = Pattern.compile("\\d+");
         Matcher matcher;
-        if(tokens[1].trim().equals("§å¤å¤")&&tokens[2].trim().equals("PM2.5"))
+        if(tokens[1].trim().equals("å¤§é‡Œ")&&tokens[2].trim().equals("PM2.5"))
         {
             result = tokens[0]+","+tokens[1]+",";
             for (int i =0;i<tokens.length ;i++ ) {
