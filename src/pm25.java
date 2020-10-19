@@ -35,12 +35,12 @@ public class pm25 {
         if(!full)
         {
             // 表示為第一次讀檔案
-            String[][] point_tokens = {{},{},{},{}};
+		String[][] point_tokens = {{},{},{},{}};
+            String[] point_tmp = {};
             if(point_str!="") 
             {
-                String[] point_tmp = {};
                 point_tmp=point_str.split(";");
-                for (int i=0;i<point_tmp.length-1 ;i++ ) {
+                for (int i=0;i<4 ;i++ ) {
                     point_tokens[i]= point_tmp[i].split(",");
                 }
             }
@@ -57,8 +57,8 @@ public class pm25 {
                     if(point_str=="") break;
                 }
             }
-            
-            if(index==3) full=true;
+            if(point_str!="") index=Integer.parseInt(point_tmp[4]);
+	    if(index>=3) full=true;
         }
         else
         {
@@ -80,9 +80,10 @@ public class pm25 {
                 {
                     min=distance[i];
                     tmp = i;
-                } 
+                }
             }
             index = tmp;
+
         }
         // 分群以數字0-3
         context.write(new IntWritable(index), new Text(rain_str));
@@ -134,7 +135,7 @@ public class pm25 {
     }
 
  }
-
+ static int sort_count = 0;
  public static class SortMap2 extends Mapper<LongWritable, Text, Text, Text> {
     public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
         StringTokenizer tokenizer = new StringTokenizer(value.toString());
@@ -143,6 +144,7 @@ public class pm25 {
             String token = tokenizer.nextToken();
             tag=token+";";
             token = tokenizer.nextToken();
+            sort_count++;
             context.write(new Text("1"), new Text(tag+token));
         }
     }
@@ -151,8 +153,8 @@ public class pm25 {
 
     public void reduce(Text key, Iterable<Text> values, Context context) 
       throws IOException, InterruptedException {
- 	String[] token={};
-        String[][] tokens={};
+ 	    String[] token={};
+        String[][] token_low = new String[sort_count][2];
         String result_k = "";
         int count=0;
 
@@ -160,24 +162,25 @@ public class pm25 {
             token = val.toString().trim().split(";");
             if(Integer.parseInt(token[0].trim())>=10)
                 result_k+="t,"+token[1]+";";
+            else
+                token_low[count++]=token;
         }
-	for (Text val : values) {
-            token = val.toString().trim().split(";");
-            if(Integer.parseInt(token[0].trim())<10)
-		context.write(new Text(result_k+token[0]), new Text(token[1]));
+        for (int i =0;i<count ; i++) {
+            context.write(new Text(result_k+token_low[i][0]), new Text(token_low[i][1]));
         }
-}
+		
+    }
 }
 
  public static void main(String[] args) throws Exception {
 
     Configuration conf = new Configuration();
     String intput_path=args[0];
-    String output_path = args[1];
+    String output_path = args[1]+"c";
     String orign_path= args[1];
     // KMEAN
    int i=0;
-   for (i=0;i<1;i++ ) {
+   for (i=0;i<10;i++ ) {
     // 計算
         Job job = new Job(conf, "pm25_calcu_"+i);
         
@@ -194,7 +197,7 @@ public class pm25 {
         FileOutputFormat.setOutputPath(job, new Path(output_path));
         job.waitForCompletion(true);
         intput_path = output_path;
-        output_path = orign_path+"c_"+String.valueOf(i);
+        output_path = orign_path+"s_"+String.valueOf(i);
     // 排序
         Job job2 = new Job(conf, "pm25_sort_"+i);
         
@@ -211,8 +214,7 @@ public class pm25 {
         FileOutputFormat.setOutputPath(job2, new Path(output_path));
         job2.waitForCompletion(true);
         intput_path = output_path;
-        output_path = orign_path+"s_"+String.valueOf(i);
+        output_path = orign_path+"c_"+String.valueOf(i);
     }
   }
 }
-
